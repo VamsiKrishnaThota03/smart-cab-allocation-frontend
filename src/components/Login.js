@@ -16,7 +16,7 @@ const Login = () => {
     setError("");
     try {
       const response = await axios.post(
-        "http://localhost:5001/api/auth/login",
+        "https://smart-cab-allocation-backend.onrender.com/api/auth/login",
         {
           email,
           password,

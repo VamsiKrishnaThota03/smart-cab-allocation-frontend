@@ -152,7 +152,7 @@ const Home = () => {
   // Fetch available cabs from the backend and set cabLocations
   const fetchAvailableCabs = async () => {
     try {
-      const response = await axios.get('http://localhost:5001/api/cabs/availableCabs');
+      const response = await axios.get('https://smart-cab-allocation-backend.onrender.com/api/cabs/availableCabs');
       const locations = response.data.map((cab) => ({
         id: cab._id,
         lat: parseFloat(cab.latitude), // Convert latitude to a number
@@ -180,7 +180,7 @@ const Home = () => {
       }
     
       // Send the request to book the cab using its ID and the token in the headers
-      const response = await axios.post(`http://localhost:5001/api/cabs/bookCab/${cab.id}`, {}, {
+      const response = await axios.post(`https://smart-cab-allocation-backend.onrender.com/api/cabs/bookCab/${cab.id}`, {}, {
         headers: {
           'auth-token': token // Use the token from localStorage
         }

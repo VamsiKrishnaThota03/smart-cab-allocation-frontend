@@ -98,7 +98,7 @@ const AdminDashboard = () => {
       setCabDetails(updatedCabDetails);
 
       const token = localStorage.getItem('auth-token');
-      const response = await axios.post('http://localhost:5001/api/cabs/addCab', updatedCabDetails, {
+      const response = await axios.post('https://smart-cab-allocation-backend.onrender.com/api/cabs/addCab', updatedCabDetails, {
         headers: {
           'auth-token': token
         }

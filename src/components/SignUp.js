@@ -14,7 +14,7 @@ const Signup = () => {
     e.preventDefault();
     setError(''); // Clear any existing error message
     try {
-      const response = await axios.post('http://localhost:5001/api/auth/register', {
+      const response = await axios.post('https://smart-cab-allocation-backend.onrender.com/api/auth/register', {
         name: credentials.name,
         email: credentials.email,
         password: credentials.password,

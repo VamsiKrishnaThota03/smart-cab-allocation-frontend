@@ -161,7 +161,7 @@ const MyCab = () => {
 
   const endTrip = async () => {
     try {
-      const response = await axios.post(`http://localhost:5001/api/cabs/endTrip/${bookedCab.id}`, {
+      const response = await axios.post(`https://smart-cab-allocation-backend.onrender.com/api/cabs/endTrip/${bookedCab.id}`, {
         destinationLat: toLat, 
         destinationLng: toLng,
       });

@@ -58,7 +58,7 @@ const UserDetails = () => {
   useEffect(() => {
     const fetchUserDetails = async () => {
       try {
-        const response = await fetch("http://localhost:5001/api/auth/getuser", {
+        const response = await fetch("https://smart-cab-allocation-backend.onrender.com/api/auth/getuser", {
           method: "POST",
           headers: { "auth-token": localStorage.getItem("auth-token") },
         });

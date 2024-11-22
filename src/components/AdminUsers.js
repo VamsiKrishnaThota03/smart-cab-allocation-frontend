@@ -27,7 +27,7 @@ console.log(isAdmin);
   // Fetch all users
   const fetchUsers = async () => {
     try {
-      const response = await axios.get("http://localhost:5001/api/admin/users", {
+      const response = await axios.get("https://smart-cab-allocation-backend.onrender.com/api/admin/users", {
         headers: {
           'auth-token': localStorage.getItem("auth-token"),
         },
@@ -44,7 +44,7 @@ console.log(isAdmin);
     const confirmDelete = window.confirm("Are you sure you want to delete this user?");
     if (confirmDelete) {
       try {
-        await axios.delete(`http://localhost:5001/api/admin/users/${id}`, {
+        await axios.delete(`https://smart-cab-allocation-backend.onrender.com/api/admin/users/${id}`, {
           headers: {
             "auth-token": localStorage.getItem("auth-token"),
           },
