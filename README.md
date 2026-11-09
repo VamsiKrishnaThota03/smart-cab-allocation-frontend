@@ -15,58 +15,70 @@ A React web app for finding, booking and tracking nearby cabs on Google Maps. It
 
 **https://smart-cab-allocation-frontend.vercel.app/login**
 
-Admin demo account (from the original README):
+Sign up to try it as a rider. Admin accounts are not shared publicly; the backend grants admin rights to the emails in its `ADMIN_EMAILS` setting.
 
-| Email | Password |
+## Screenshots
+
+| Log in | Cab search results |
 | --- | --- |
-| `admin@gmail.com` | `12345678` |
+| ![Login page](docs/screenshots/login.png) | ![Nearest and other available cabs](docs/screenshots/cab-search.png) |
 
-## Overview
+| Trip on mobile | Manage users (admin) |
+| --- | --- |
+| ![Trip view on a phone](docs/screenshots/trip-mobile.png) | ![Admin user list](docs/screenshots/manage-users.png) |
 
-The app is a Create React App frontend. It talks to the deployed backend at `https://smart-cab-allocation-backend.onrender.com` and loads the Google Maps JavaScript API directly in the browser. Riders see available cabs on a map, get a "nearest cabs" list ranked by distance, book one, and watch a simulated trip along the real driving route. Admins add cabs by picking a spot on the map and manage registered users.
+The screenshots were taken locally with sample data and no Google Maps key, so the map areas show the "Map unavailable" placeholder. With a key set they show the Google map, markers and route.
 
 ## Features
 
 **Riders**
-- Sign up and log in with JWT auth. The token is kept in `localStorage`, and protected routes use a `PrivateRoute` guard.
-- A Google Map shows your current location (browser Geolocation API) and every available cab as a taxi marker.
-- Enter pickup ("From", filled in from your location) and drop-off ("To") coordinates to find cabs:
-  - all available cabs are sorted by straight-line distance (Haversine formula), with an estimated time to reach you
-  - the "nearest cabs" list keeps cabs within **5 km**, or in the same **town or pincode** (Google Geocoding API)
-- Book a cab. It is marked unavailable for other users.
-- **My Cab** page: the app draws a driving route from the cab to you (Google Directions API) and animates the cab marker along it, updating the remaining distance and ETA. When the cab arrives, **End Trip** unlocks and moves the cab to the drop-off point, making it available again.
-- Profile page with the logged-in user's details
+- Sign up and log in with JWT auth. Expired tokens send you back to the login page.
+- A Google Map shows your location (browser Geolocation API) and every available cab as a taxi marker.
+- Enter pickup and drop-off coordinates, or click **Pick on map**, then search:
+  - every available cab is sorted by straight-line distance (Haversine formula) with an ETA at an average city speed of 30 km/h
+  - **Nearest cabs** are those within **5 km** or in the same **town or pincode** as the pickup (reverse geocoding through the backend)
+- Book a cab. Booking is atomic on the server, so two riders cannot take the same cab, and each rider has one active booking at a time.
+- **My trip**: the driving route from the cab to you (Google Directions API) with the cab animated along it, the remaining distance and ETA. When the cab arrives, **End trip** moves it to your drop-off point and frees it. The page survives a reload, and a booking left over from another session can be released.
+- Profile page
 
 **Admins**
-- Admin dashboard for adding a cab (name, phone, email, location). Set the location by clicking the map or typing coordinates; town and pincode are filled in by reverse geocoding.
-- Manage users: list all users and delete non-admin users
-- Admin-only routes check the `isAdmin` claim in the JWT
+- Add a cab (captain name, phone, email, location). Set the location by clicking the map, typing coordinates or using your current position; town and pincode come from reverse geocoding.
+- List users and delete non-admin users.
+- Admin pages and API routes check the `isAdmin` claim in the signed JWT. Admin rights are given only to emails listed in `ADMIN_EMAILS`.
+
+**UI**
+- One colour palette and type scale, visible focus states, labelled form fields
+- Responsive layouts with a mobile menu
+- Loading, empty and error states instead of `alert()` pop-ups
 
 ## Tech stack
 
 | Area | Tools |
 | --- | --- |
-| UI | React 18, Create React App (`react-scripts`), React Router 6 |
-| Maps | Google Maps JavaScript API (Maps, Markers, Directions, Geocoding), `@react-google-maps/api` |
-| HTTP / auth | `axios`, `fetch`, `jwt-decode` |
-| Icons | `react-icons`, Font Awesome |
+| UI | React 18, Create React App (`react-scripts`), React Router 6, `react-icons`, Bootstrap 5 reboot + custom CSS |
+| Maps | Google Maps JavaScript API (Maps, Markers, Directions) via `@react-google-maps/api` |
+| HTTP / auth | `axios`, `jwt-decode` |
+| Tests | Jest, React Testing Library |
 | Hosting | Vercel |
 
 ## Project structure
 
 ```
 smart-cab-allocation-frontend/
-├── public/
+├── public/                     # index.html, favicon, manifest
 └── src/
     ├── App.js                  # routes
+    ├── config.js               # API URL, Maps key, ETA settings
+    ├── hooks/useGoogleMaps.js  # loads the Maps API once
+    ├── utils/                  # auth (session), geo (distance, formatting), trip helpers
     └── components/
-        ├── Login.js, SignUp.js
+        ├── Login.js, SignUp.js, AuthLayout.js, PasswordInput.js
         ├── Home.js             # map, nearest-cab search, booking
         ├── MyCab.js            # route + simulated cab movement, end trip
         ├── UserDetails.js      # profile
         ├── AdminDashboard.js   # add cab via map
         ├── AdminUsers.js       # list / delete users
-        ├── Navbar.js, AdminNavbar.js
+        ├── Navbar.js, AdminNavbar.js, MapStatus.js
         └── PrivateRoute.js     # auth + admin route guard
 ```
 
@@ -85,9 +97,9 @@ smart-cab-allocation-frontend/
 
 ### Prerequisites
 
-- Node.js and npm
-- A browser with location access enabled
-- A running backend ([smart-cab-allocation-backend](https://github.com/VamsiKrishnaThota03/smart-cab-allocation-backend)); the code points at the deployed Render instance by default
+- Node.js 18 or newer and npm
+- A running backend ([smart-cab-allocation-backend](https://github.com/VamsiKrishnaThota03/smart-cab-allocation-backend)), locally on port 5001 by default
+- Optional: a Google Maps browser key
 
 ### Install and run
 
@@ -95,22 +107,35 @@ smart-cab-allocation-frontend/
 git clone https://github.com/VamsiKrishnaThota03/smart-cab-allocation-frontend.git
 cd smart-cab-allocation-frontend
 npm install
-npm start          # http://localhost:3000
+cp .env.example .env     # then edit the values
+npm start                # http://localhost:3000
 ```
 
 | Command | Description |
 | --- | --- |
 | `npm start` | Start the dev server |
 | `npm run build` | Production build into `build/` |
-| `npm test` | Run the CRA test runner |
+| `npm test` | Run the tests |
 
-### Configuration
+### Environment variables
 
-There are no environment variables yet. These values are hard-coded in `src/components/*.js`:
-
-| Setting | Where | Replace with |
+| Variable | Required | Description |
 | --- | --- | --- |
-| Backend base URL | `https://smart-cab-allocation-backend.onrender.com` in `Home.js`, `MyCab.js`, `Login.js`, `SignUp.js`, `UserDetails.js`, `AdminDashboard.js`, `AdminUsers.js` | `<your-backend-url>` (for example `http://localhost:5001`) |
-| Google Maps API key | `Home.js`, `MyCab.js`, `AdminDashboard.js` | `<your-google-maps-api-key>` with the Maps JavaScript, Directions and Geocoding APIs enabled |
+| `REACT_APP_API_URL` | No | Backend base URL. Defaults to `http://localhost:5001` in development and `https://smart-cab-allocation-backend.onrender.com` in production builds |
+| `REACT_APP_GOOGLE_MAPS_API_KEY` | For maps | Browser key with the Maps JavaScript and Directions APIs enabled. Restrict it by HTTP referrer in the Google Cloud console. Without it the app still works, but the maps show a placeholder and the trip view moves the cab in a straight line |
 
-To make this configurable, move the values into `REACT_APP_API_URL` and `REACT_APP_GOOGLE_MAPS_API_KEY` in a `.env` file and read them through `process.env`.
+`REACT_APP_*` values are baked in at build time, so restart `npm start` (or redeploy) after changing them.
+
+## Deployment notes (Vercel)
+
+- Set `REACT_APP_GOOGLE_MAPS_API_KEY` in the project's environment variables and redeploy. The key used to be hard-coded in the source; it has been removed from the code but is still in the git history, so restrict it to your domains or rotate it.
+- Set `REACT_APP_API_URL` only if the API is not at `https://smart-cab-allocation-backend.onrender.com`.
+- The backend needs `CORS_ORIGIN` to include the Vercel domain if it restricts origins.
+
+## Known limitations
+
+- The trip is a simulation: the cab marker is animated along the route in the browser, not driven by real GPS updates.
+- Locations are entered as `latitude, longitude` text or picked on the map; there is no address search box.
+- The town/pincode match makes one reverse-geocoding request per cab (cached while the page is open), so it gets slow with many cabs.
+- JWTs are kept in `localStorage` and expire after one hour.
+- `npm audit` still reports issues inside `react-scripts` (Create React App) that need a breaking upgrade to fix.
