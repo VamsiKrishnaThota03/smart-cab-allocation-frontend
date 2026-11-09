@@ -1,53 +1,11 @@
-import React from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
-import "./Navbar.css";
+import React from 'react';
+import Navbar from './Navbar';
 
-const Navbar = ({ hideProfileButton }) => {
-  let navigate = useNavigate();
-  const location = useLocation();
+const adminLinks = [
+  { to: '/admin-dashboard', label: 'Cabs' },
+  { to: '/admin/users', label: 'Users' },
+];
 
-  const handleLogOut = () => {
-    localStorage.removeItem("auth-token"); // Remove token from localStorage on logout
-    navigate("/login"); // Navigate to login page
-  };
+const AdminNavbar = () => <Navbar homePath="/admin-dashboard" links={adminLinks} />;
 
-  return (
-    <nav className="navbar">
-      <div className="navbar-content">
-        {/* Smart Cabs logo aligned to the left */}
-        <Link className="navbar-brand" to="/admin-dashboard">
-          Smart Cabs
-        </Link>
-
-        {/* Render Profile and Logout buttons aligned to the right only if the user is logged in */}
-        {localStorage.getItem("auth-token") && (
-          <div className="navbar-right">
-            {/* Profile button - Hide if on profile page */}
-            {(
-                            <button
-                                className="logout-btn"
-                                onClick={() => navigate('/admin/users')}
-                            >
-                                Users
-                            </button>
-                        )}
-            {!hideProfileButton && location.pathname !== "/profile" && (
-              <button
-                className="logout-btn"
-                onClick={() => navigate("/profile")}
-              >
-                Profile
-              </button>
-            )}
-            {/* Logout button */}
-            <button className="logout-btn" onClick={handleLogOut}>
-              Logout
-            </button>
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-};
-
-export default Navbar;
+export default AdminNavbar;

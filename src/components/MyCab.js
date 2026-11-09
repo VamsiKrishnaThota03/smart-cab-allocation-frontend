@@ -1,209 +1,229 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import Navbar from './Navbar';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { FaTaxi, FaCheckCircle, FaPhoneAlt } from 'react-icons/fa';
+import Navbar from './Navbar';
+import MapStatus from './MapStatus';
+import useGoogleMaps from '../hooks/useGoogleMaps';
+import { API_URL } from '../config';
+import { authHeaders, errorMessage } from '../utils/auth';
+import { calculateDistance, calculateTime, formatDistance, formatTime } from '../utils/geo';
+import { clearTrip, fetchActiveCab, loadTrip } from '../utils/trip';
+import './MyCab.css';
 
-const calculateDistance = (fromLat, fromLng, toLat, toLng) => {
-  const toRadians = (degree) => (degree * Math.PI) / 180;
-  const R = 6371; // Radius of Earth in kilometers
-  const dLat = toRadians(toLat - fromLat);
-  const dLng = toRadians(toLng - fromLng);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(fromLat)) * Math.cos(toRadians(toLat)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in kilometers
-};
+const SIMULATION_STEPS = 30; // roughly 30 seconds from booking to arrival
+const ARRIVAL_THRESHOLD_KM = 0.05;
 
-const calculateTime = (distance) => {
-  const speed = 200; // Assuming cab speed is 200 km/h
-  return (distance / speed) * 60; // Time in minutes
-};
-
-const formatTime = (minutes) => {
-  if (minutes < 1) {
-    const seconds = Math.round(minutes * 60);
-    return `${seconds} seconds`;
-  } else if (minutes < 60) {
-    const mins = Math.floor(minutes);
-    return `${mins} minutes`;
-  } else if (minutes < 1440) {
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = Math.round(minutes % 60);
-    return `${hours} hrs ${remainingMinutes > 0 ? remainingMinutes + ' mins' : ''}`;
-  } else {
-    const days = Math.floor(minutes / 1440);
-    const hours = Math.floor((minutes % 1440) / 60);
-    return `${days} days ${hours > 0 ? hours + ' hrs' : ''}`;
-  }
-};
+// Straight line between two points, used when no driving route is available.
+const straightLine = (from, to, steps = SIMULATION_STEPS) =>
+  Array.from({ length: steps + 1 }, (_, i) => ({
+    lat: from.lat + ((to.lat - from.lat) * i) / steps,
+    lng: from.lng + ((to.lng - from.lng) * i) / steps,
+  }));
 
 const MyCab = () => {
   const location = useLocation();
-  console.log(location);
   const navigate = useNavigate();
-  const { bookedCab, fromLat, fromLng, toLat, toLng } = location.state || {};
-  const [cabPosition, setCabPosition] = useState({ lat: bookedCab.lat, lng: bookedCab.lng });
-  const [distanceRemaining, setDistanceRemaining] = useState(calculateDistance(bookedCab.lat, bookedCab.lng, fromLat, fromLng));
-  const [estimatedTime, setEstimatedTime] = useState(formatTime(calculateTime(distanceRemaining))); // Updated with speed-based calculation
-  const [map, setMap] = useState(null);
-  const [cabMarker, setCabMarker] = useState(null);
-  const [path, setPath] = useState(null); // Store the path along the road
-  const [isEndTripEnabled, setIsEndTripEnabled] = useState(false); // Disable button initially
+  const { isLoaded, loadError, missingKey } = useGoogleMaps();
+  const [trip] = useState(() => location.state?.bookedCab ? location.state : loadTrip());
 
+  const [orphanCab, setOrphanCab] = useState(null); // booked on the server but no local trip
+  const [checking, setChecking] = useState(!trip);
+  const [cabPosition, setCabPosition] = useState(trip ? { lat: trip.bookedCab.lat, lng: trip.bookedCab.lng } : null);
+  const [path, setPath] = useState(null);
+  const [arrived, setArrived] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [error, setError] = useState('');
+
+  const mapDivRef = useRef(null);
+  const mapRef = useRef(null);
+  const cabMarkerRef = useRef(null);
+
+  const pickup = trip ? { lat: trip.fromLat, lng: trip.fromLng } : null;
+  const distanceRemaining = trip && cabPosition
+    ? calculateDistance(cabPosition.lat, cabPosition.lng, trip.fromLat, trip.fromLng)
+    : 0;
+
+  // No trip in this tab: check whether the server still has a booking for us.
   useEffect(() => {
-    const initMap = () => {
-      const mapInstance = new window.google.maps.Map(document.getElementById('myCabMap'), {
-        center: { lat: bookedCab.lat, lng: bookedCab.lng },
-        zoom: 13,
-      });
-      setMap(mapInstance);
+    if (trip) return;
+    fetchActiveCab()
+      .then(setOrphanCab)
+      .catch(() => {})
+      .finally(() => setChecking(false));
+  }, [trip]);
 
-      const newCabMarker = new window.google.maps.Marker({
-        position: cabPosition,
-        map: mapInstance,
-        icon: {
-          url: 'https://img.icons8.com/color/48/taxi.png',
-          scaledSize: new window.google.maps.Size(32, 32),
-        },
-        title: 'Your Cab',
-      });
-
-      setCabMarker(newCabMarker);
-    };
-
-    const loadGoogleMapsScript = () => {
-      if (!document.querySelector(`script[src*="maps.googleapis.com/maps/api/js"]`)) {
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBQ8nmutuyTUzyBeY7WoAyA0A7qc4qZeTQ&callback=initMap`;
-        script.async = true;
-        window.initMap = initMap;
-        document.body.appendChild(script);
-      } else if (window.google && !map) {
-        initMap(); // Initialize map if script is already loaded
-      }
-    };
-
-    loadGoogleMapsScript();
-  }, [map]);
-
-  // Get directions (path along roads) from cab location to user's current location
+  // Build the map and request the driving route from the cab to the pickup.
   useEffect(() => {
-    if (map && bookedCab) {
-      const directionsService = new window.google.maps.DirectionsService();
+    if (!trip) return;
+    const start = { lat: trip.bookedCab.lat, lng: trip.bookedCab.lng };
+    const end = { lat: trip.fromLat, lng: trip.fromLng };
 
-      const request = {
-        origin: new window.google.maps.LatLng(bookedCab.lat, bookedCab.lng),
-        destination: new window.google.maps.LatLng(fromLat, fromLng), // Destination is user's current location
-        travelMode: 'DRIVING',
-      };
+    if (!isLoaded) {
+      if (missingKey || loadError) setPath((current) => current || straightLine(start, end));
+      return;
+    }
+    if (mapRef.current || !mapDivRef.current) return;
 
-      directionsService.route(request, (result, status) => {
+    const map = new window.google.maps.Map(mapDivRef.current, {
+      center: start,
+      zoom: 14,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+    });
+    mapRef.current = map;
+    cabMarkerRef.current = new window.google.maps.Marker({
+      position: start,
+      map,
+      zIndex: 10,
+      icon: { url: 'https://img.icons8.com/color/48/taxi.png', scaledSize: new window.google.maps.Size(40, 40) },
+      title: 'Your cab',
+    });
+
+    new window.google.maps.DirectionsService().route(
+      { origin: start, destination: end, travelMode: 'DRIVING' },
+      (result, status) => {
         if (status === 'OK') {
-          const directionsRenderer = new window.google.maps.DirectionsRenderer();
-          directionsRenderer.setDirections(result);
-          directionsRenderer.setMap(map);
-
-          const route = result.routes[0].overview_path;
-          setPath(route); // Set the route along the roads
+          new window.google.maps.DirectionsRenderer({ map, directions: result, suppressMarkers: false, preserveViewport: false });
+          const route = result.routes[0].overview_path.map((point) => point.toJSON());
+          const stride = Math.max(1, Math.ceil(route.length / SIMULATION_STEPS));
+          const sampled = route.filter((_, i) => i % stride === 0);
+          sampled.push(end);
+          setPath(sampled);
         } else {
-          console.error('Directions request failed due to ' + status);
+          setPath(straightLine(start, end));
         }
-      });
-    }
-  }, [map, bookedCab, fromLat, fromLng]);
+      }
+    );
+  }, [trip, isLoaded, loadError, missingKey]);
 
-  // Simulate the cab moving along the path and update time and distance
+  // Move the cab one step per second until it reaches the pickup.
   useEffect(() => {
-    if (path && path.length > 0) {
-      let step = 0; // Start from the first step of the path
-  
-      const interval = setInterval(() => {
-        if (step < path.length) {
-          const nextPosition = path[step];
-          const nextLat = nextPosition.lat();
-          const nextLng = nextPosition.lng();
-  
-          const newDistance = calculateDistance(nextLat, nextLng, fromLat, fromLng); // Distance to the user's current location
-          console.log('Current Distance:', newDistance); // Debugging log
-          
-          // Update the estimated time based on the new distance
-          const newTime = calculateTime(newDistance);
-          setEstimatedTime(formatTime(newTime));
+    if (!path || path.length === 0) return undefined;
+    let step = 0;
+    const interval = setInterval(() => {
+      step += 1;
+      const next = path[Math.min(step, path.length - 1)];
+      setCabPosition(next);
+      cabMarkerRef.current?.setPosition(next);
+      mapRef.current?.panTo(next);
 
-          setDistanceRemaining(newDistance);
-  
-          // Update cab's position on the map
-          setCabPosition({ lat: nextLat, lng: nextLng });
-          cabMarker.setPosition(nextPosition);
-          map.setCenter(nextPosition);
-  
-          step += 10; // Move by a smaller step for accuracy
-          if (newDistance < 0.4) { // Threshold to consider it "reached"
-            console.log('Cab has reached the user location');
-            clearInterval(interval); // Stop the cab at user's current location
-          
-            // Directly set the cab's position and center the map at user's location
-            cabMarker.setPosition(new window.google.maps.LatLng(fromLat, fromLng));
-            map.setCenter({ lat: fromLat, lng: fromLng });
-            
-            alert('Cab Arrived..');
-            setIsEndTripEnabled(true); // Enable "End Trip" button
-          }
-          
-        }
-      }, 1000); // You can increase speed by reducing the delay to, e.g., 500ms
-  
-      return () => clearInterval(interval);
-    }
-  }, [path, cabMarker, map, fromLat, fromLng]);
+      const remaining = calculateDistance(next.lat, next.lng, path[path.length - 1].lat, path[path.length - 1].lng);
+      if (step >= path.length - 1 || remaining < ARRIVAL_THRESHOLD_KM) {
+        clearInterval(interval);
+        setArrived(true);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [path]);
 
-  const endTrip = async () => {
+  const endTrip = async (cabId, destination) => {
+    setEnding(true);
+    setError('');
     try {
-      const response = await axios.post(`https://smart-cab-allocation-backend.onrender.com/api/cabs/endTrip/${bookedCab.id}`, {
-        destinationLat: toLat, 
-        destinationLng: toLng,
-      });
-  
-      alert(response.data.message);
-      navigate('/'); // Redirect to the home page after trip ends
-    } catch (error) {
-      console.error('Error ending the trip:', error);
-      alert('Failed to end the trip.');
+      await axios.post(
+        `${API_URL}/api/cabs/endTrip/${cabId}`,
+        destination ? { destinationLat: destination.lat, destinationLng: destination.lng } : {},
+        { headers: authHeaders() }
+      );
+      clearTrip();
+      navigate('/');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to end the trip.'));
+      setEnding(false);
     }
   };
 
+  if (!trip) {
+    return (
+      <>
+        <Navbar />
+        <main className="page">
+          <div className="surface empty-state">
+            {checking ? (
+              <span className="spinner" role="status" aria-label="Checking your booking" />
+            ) : orphanCab ? (
+              <>
+                <strong>You have an active booking with {orphanCab.name}</strong>
+                <p>The trip details from this session are no longer available. Release the cab to book again.</p>
+                {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+                <button type="button" className="btn btn-dark" onClick={() => endTrip(orphanCab.id)} disabled={ending}>
+                  {ending ? 'Releasing…' : 'Release cab'}
+                </button>
+              </>
+            ) : (
+              <>
+                <strong>No active trip</strong>
+                <p>Book a cab and you can follow it here.</p>
+                <Link to="/" className="btn btn-accent">Find a cab</Link>
+              </>
+            )}
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <>
       <Navbar />
-      <h2 style={{ textAlign: 'center', padding: '10px', backgroundColor: '#007bff', color: '#fff' }}>
-        Your Cab is on the Way!
-      </h2>
-      <div id="myCabMap" style={{ flex: 1, width: '100%' }}></div>
-      <div style={{ textAlign: 'center', padding: '10px', backgroundColor: '#f1f1f1' }}>
-      {!isEndTripEnabled ? (
-        <p><strong>Your Cab will arrive in:</strong> {estimatedTime}...</p>
-      ) : (
-        <p><strong>Your Cab has arrived</strong></p>
-      )}
-        <button
-          onClick={endTrip}
-          disabled={!isEndTripEnabled} // Disable until cab reaches user's location
-          style={{
-            padding: '10px 15px',
-            backgroundColor: isEndTripEnabled ? '#28a745' : '#d9534f',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isEndTripEnabled ? 'pointer' : 'not-allowed',
-            marginTop: '20px',
-          }}
-        >
-          End Trip
-        </button>
+      <div className="mycab-layout">
+        <section className="mycab-map" aria-label="Live trip map">
+          <div ref={mapDivRef} className="mycab-map__canvas" style={{ display: isLoaded ? 'block' : 'none' }} />
+          {!isLoaded && <MapStatus missingKey={missingKey} loadError={loadError} />}
+        </section>
+
+        <aside className="mycab-panel surface">
+          <div className={`mycab-status ${arrived ? 'is-arrived' : ''}`}>
+            {arrived ? <FaCheckCircle aria-hidden="true" /> : <FaTaxi aria-hidden="true" />}
+            <div>
+              <span className="mycab-status__label">{arrived ? 'Your cab has arrived' : 'Your cab is on the way'}</span>
+              <strong className="mycab-status__eta" aria-live="polite">
+                {arrived ? 'Meet your captain at the pickup' : `Arrives in ${formatTime(calculateTime(distanceRemaining))}`}
+              </strong>
+            </div>
+          </div>
+
+          <dl className="mycab-details">
+            <div>
+              <dt>Captain</dt>
+              <dd>{trip.bookedCab.name}</dd>
+            </div>
+            {trip.bookedCab.phone && (
+              <div>
+                <dt>Phone</dt>
+                <dd><a href={`tel:${trip.bookedCab.phone}`}><FaPhoneAlt aria-hidden="true" /> {trip.bookedCab.phone}</a></dd>
+              </div>
+            )}
+            <div>
+              <dt>Distance to pickup</dt>
+              <dd>{arrived ? '0 m' : formatDistance(distanceRemaining)}</dd>
+            </div>
+            <div>
+              <dt>Pickup</dt>
+              <dd>{pickup.lat.toFixed(5)}, {pickup.lng.toFixed(5)}</dd>
+            </div>
+            <div>
+              <dt>Drop-off</dt>
+              <dd>{trip.toLat.toFixed(5)}, {trip.toLng.toFixed(5)}</dd>
+            </div>
+          </dl>
+
+          {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+
+          <button
+            type="button"
+            className="btn btn-accent btn-block"
+            onClick={() => endTrip(trip.bookedCab.id, { lat: trip.toLat, lng: trip.toLng })}
+            disabled={!arrived || ending}
+          >
+            {ending ? 'Ending trip…' : 'End trip'}
+          </button>
+          {!arrived && <p className="field-hint mycab-hint">You can end the trip once the cab reaches you.</p>}
+        </aside>
       </div>
-    </div>
+    </>
   );
 };
 

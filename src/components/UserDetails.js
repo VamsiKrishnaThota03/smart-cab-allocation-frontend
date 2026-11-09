@@ -1,99 +1,62 @@
-// import React, { useEffect, useState } from 'react';
-// import Navbar from './Navbar'; // Import the Navbar component
-// import './UserDetails.css'; // Assuming you want to apply some custom styles
-
-// const UserDetails = () => {
-//   const [credentials, setCredentials] = useState({ email: "", name: "" });
-
-//   useEffect(() => {
-//     const fetchUserDetails = async () => {
-//       try {
-//         const response = await fetch("http://localhost:5000/api/auth/getuser", {
-//           method: 'POST',
-//           headers: { "auth-token": localStorage.getItem('auth-token') },
-//         });
-//         const userDetails = await response.json();
-//         setCredentials({ email: userDetails.email, name: userDetails.name });
-//       } catch (error) {
-//         console.error("Error fetching user details:", error);
-//       }
-//     };
-
-//     fetchUserDetails();
-//   }, []);
-
-//   return (
-//     <>
-//       {/* Navbar will still be shown on this page */}
-//       <Navbar hideProfileButton={true} />
-
-//       <div className="profile-page">
-//         <div className="profile-card card">
-//           <div className="card-body">
-//             <h2 className="card-title">Your Profile</h2>
-//             <p className="card-text">
-//               <strong>Email: </strong> {credentials.email}
-//             </p>
-//             <p className="card-text">
-//               <strong>Name: </strong> {credentials.name}
-//             </p>
-//           </div>
-//         </div>
-//       </div>
-//     </>
-//   );
-// };
-
-// export default UserDetails;
-
-import React, { useEffect, useState } from "react";
-import Navbar from "./Navbar"; // Import the regular Navbar component
-import AdminNavbar from "./AdminNavbar"; // Import the admin-specific Navbar
-import "./UserDetails.css"; // Import custom styles
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { FaUserCircle } from 'react-icons/fa';
+import Navbar from './Navbar';
+import AdminNavbar from './AdminNavbar';
+import { API_URL } from '../config';
+import { authHeaders, errorMessage, isAdminSession } from '../utils/auth';
+import './UserDetails.css';
 
 const UserDetails = () => {
-  const [credentials, setCredentials] = useState({ email: "", name: "" });
-  const isAdmin = localStorage.getItem("isAdmin") === "true"; // Retrieve admin status
+  const [user, setUser] = useState(null);
+  const [error, setError] = useState('');
+  const isAdmin = isAdminSession();
 
   useEffect(() => {
-    const fetchUserDetails = async () => {
-      try {
-        const response = await fetch("https://smart-cab-allocation-backend.onrender.com/api/auth/getuser", {
-          method: "POST",
-          headers: { "auth-token": localStorage.getItem("auth-token") },
-        });
-        const userDetails = await response.json();
-        setCredentials({ email: userDetails.email, name: userDetails.name });
-      } catch (error) {
-        console.error("Error fetching user details:", error);
-      }
-    };
-
-    fetchUserDetails();
+    axios
+      .get(`${API_URL}/api/auth/getuser`, { headers: authHeaders() })
+      .then(({ data }) => setUser(data))
+      .catch((err) => setError(errorMessage(err, 'Could not load your profile.')));
   }, []);
 
   return (
     <>
-      {/* Conditionally render either the regular or admin Navbar */}
-      {isAdmin ? (
-        <AdminNavbar hideProfileButton={true} />
-      ) : (
-        <Navbar hideProfileButton={true} />
-      )}
+      {isAdmin ? <AdminNavbar /> : <Navbar />}
+      <main className="page profile-page">
+        <div className="profile-card surface">
+          <div className="profile-card__avatar" aria-hidden="true"><FaUserCircle /></div>
+          <h1 className="profile-card__title">Your profile</h1>
 
-      <div className="profile-page">
-        <div className="profile-card card">
-          <div className="card-body">
-            <h2 className="card-title">Your Profile</h2>
-            <p className="card-text">
-              <strong>Email: </strong> {credentials.email}
-            </p>
-            <p className="card-text">
-              <strong>Name: </strong> {credentials.name}
-            </p>
-          </div>
+          {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+
+          {!user && !error && (
+            <div className="profile-card__loading" role="status">
+              <span className="spinner" aria-hidden="true" /> Loading profile…
+            </div>
+          )}
+
+          {user && (
+            <dl className="profile-card__details">
+              <div>
+                <dt>Name</dt>
+                <dd>{user.name}</dd>
+              </div>
+              <div>
+                <dt>Email</dt>
+                <dd>{user.email}</dd>
+              </div>
+              <div>
+                <dt>Role</dt>
+                <dd>
+                  <span className={`badge-pill ${user.isAdmin ? 'badge-pill--admin' : ''}`}>
+                    {user.isAdmin ? 'Admin' : 'Rider'}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          )}
         </div>
-      </div>
+      </main>
     </>
   );
 };

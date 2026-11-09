@@ -1,40 +1,67 @@
-import React from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { FaTaxi, FaBars, FaTimes } from 'react-icons/fa';
+import { clearSession, getToken } from '../utils/auth';
 import './Navbar.css';
 
-const Navbar = ({ hideProfileButton }) => {
-    let navigate = useNavigate();
-    const location = useLocation();
+// Shared top bar. `links` is a list of { to, label } shown next to Profile / Logout.
+const userLinks = [
+  { to: '/', label: 'Book a cab' },
+  { to: '/myCab', label: 'My trip' },
+];
 
-    const handleLogOut = () => {
-        localStorage.removeItem('auth-token'); // Remove token from localStorage on logout
-        navigate('/login'); // Navigate to login page
-    };
+const Navbar = ({ homePath = '/', links = userLinks }) => {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const loggedIn = Boolean(getToken());
 
-    return (
-        <nav className="navbar">
-            <div className="navbar-content">
-                {/* Smart Cabs logo aligned to the left */}
-                <Link className="navbar-brand" to="/">Smart Cabs</Link>
+  const handleLogOut = () => {
+    clearSession();
+    navigate('/login');
+  };
 
-                {/* Render Profile and Logout buttons aligned to the right only if the user is logged in */}
-                {localStorage.getItem('auth-token') && (
-                    <div className="navbar-right">
-                        {/* Profile button - Hide if on profile page */}
-                        {!hideProfileButton && location.pathname !== '/profile' && (
-                            <button className="logout-btn" onClick={() => navigate('/profile')}>
-                                Profile
-                            </button>
-                        )}
-                        {/* Logout button */}
-                        <button className="logout-btn" onClick={handleLogOut}>
-                            Logout
-                        </button>
-                    </div>
-                )}
-            </div>
-        </nav>
-    );
+  const allLinks = [...links, { to: '/profile', label: 'Profile' }];
+
+  return (
+    <header className="app-navbar">
+      <div className="app-navbar__inner">
+        <Link className="app-navbar__brand" to={homePath}>
+          <span className="app-navbar__logo" aria-hidden="true"><FaTaxi /></span>
+          Smart Cabs
+        </Link>
+
+        {loggedIn && (
+          <>
+            <button
+              type="button"
+              className="app-navbar__toggle"
+              aria-label={open ? 'Close menu' : 'Open menu'}
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <FaTimes /> : <FaBars />}
+            </button>
+            <nav className={`app-navbar__links ${open ? 'is-open' : ''}`} aria-label="Main">
+              {allLinks.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  end
+                  className={({ isActive }) => `app-navbar__link ${isActive ? 'is-active' : ''}`}
+                  onClick={() => setOpen(false)}
+                >
+                  {link.label}
+                </NavLink>
+              ))}
+              <button type="button" className="btn btn-outline-light-custom" onClick={handleLogOut}>
+                Log out
+              </button>
+            </nav>
+          </>
+        )}
+      </div>
+    </header>
+  );
 };
 
 export default Navbar;

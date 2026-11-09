@@ -1,190 +1,148 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { GoogleMap, Marker, useLoadScript } from '@react-google-maps/api';
+import { GoogleMap, Marker } from '@react-google-maps/api';
+import { FaCrosshairs } from 'react-icons/fa';
 import AdminNavbar from './AdminNavbar';
+import MapStatus from './MapStatus';
+import useGoogleMaps from '../hooks/useGoogleMaps';
+import { API_URL } from '../config';
+import { authHeaders, errorMessage } from '../utils/auth';
+import { reverseGeocode } from '../utils/trip';
 import './AdminDashboard.css';
 
+const DEFAULT_CENTER = { lat: 23.1815, lng: 79.9864 };
+const emptyCab = { name: '', phone: '', email: '', latitude: '', longitude: '' };
+
+const toPosition = (latitude, longitude) => {
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+  return Number.isNaN(lat) || Number.isNaN(lng) ? null : { lat, lng };
+};
+
 const AdminDashboard = () => {
-  const [cabDetails, setCabDetails] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    latitude: '',
-    longitude: '',
-    pincode: '',
-    town: '',
-    bookedStatus: 'Available',
-    bookedWith: '',
-  });
+  const { isLoaded, loadError, missingKey } = useGoogleMaps();
+  const [cabDetails, setCabDetails] = useState(emptyCab);
+  const [center, setCenter] = useState(DEFAULT_CENTER);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // Load Google Maps Script
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: 'AIzaSyBQ8nmutuyTUzyBeY7WoAyA0A7qc4qZeTQ', // Replace with your API key
-  });
+  const markerPosition = toPosition(cabDetails.latitude, cabDetails.longitude);
 
-  const [map, setMap] = useState(null);
-  const [markerPosition, setMarkerPosition] = useState(null);
+  const setPosition = ({ lat, lng }) =>
+    setCabDetails((prev) => ({ ...prev, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }));
 
-  // Handle input changes
+  const locateMe = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const position = { lat: coords.latitude, lng: coords.longitude };
+        setPosition(position);
+        setCenter(position);
+      },
+      () => setError('Location access is off. Click the map or type the coordinates.')
+    );
+  };
+
+  // Start at the admin's current location when available.
+  useEffect(() => {
+    locateMe();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setCabDetails((prevDetails) => ({ ...prevDetails, [name]: value }));
-
-    if (name === 'latitude' || name === 'longitude') {
-      const lat = parseFloat(cabDetails.latitude);
-      const lng = parseFloat(cabDetails.longitude);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        setMarkerPosition({ lat, lng });
-      }
-    }
+    setCabDetails((prev) => ({ ...prev, [name]: value }));
   };
-
-  // Update marker position on map click
-  const handleMapClick = (event) => {
-    console.log(event);
-    const lat = event.latLng.lat();
-    const lng = event.latLng.lng();
-    setMarkerPosition({ lat, lng });
-    setCabDetails((prevDetails) => ({
-      ...prevDetails,
-      latitude: lat.toString(),
-      longitude: lng.toString(),
-    }));
-  };
-
-  // Fetch current location on map load
-  useEffect(() => {
-    if (isLoaded) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        setMarkerPosition({ lat: latitude, lng: longitude });
-        setCabDetails((prevDetails) => ({
-          ...prevDetails,
-          latitude: latitude.toString(),
-          longitude: longitude.toString(),
-        }));
-      });
-    }
-  }, [isLoaded]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { latitude, longitude } = cabDetails;
-    if (!latitude || !longitude) {
-      alert('Please make sure the latitude and longitude are set.');
+    setError('');
+    setSuccess('');
+    if (!markerPosition) {
+      setError('Set the cab location by clicking the map or entering latitude and longitude.');
       return;
     }
+
+    setSaving(true);
     try {
-      let postalCode = 'N/A';
-      let town = 'N/A';
-      const apiKey = 'AIzaSyBQ8nmutuyTUzyBeY7WoAyA0A7qc4qZeTQ'; 
-      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
-      const res = await axios.get(geocodeUrl);
-      console.log(res);
-      const results = res.data.results;
-  
-      if (results.length > 0) {
-        const addressComponents = results[0].address_components;
-        addressComponents.forEach(component => {
-          if (component.types.includes('postal_code')) {
-            postalCode = component.long_name;
-          }
-          if (component.types.includes('locality')) {
-            town = component.long_name;
-          }
-        });
-      }
-      const updatedCabDetails = { ...cabDetails, pincode: postalCode, town };
-      setCabDetails(updatedCabDetails);
-
-      const token = localStorage.getItem('auth-token');
-      const response = await axios.post('https://smart-cab-allocation-backend.onrender.com/api/cabs/addCab', updatedCabDetails, {
-        headers: {
-          'auth-token': token
-        }
-      });
-
-      if (response.status === 201) {
-        alert('Cab details added successfully!');
-        setCabDetails({
-          name: '',
-          phone: '',
-          email: '',
-          latitude: '',
-          longitude: '',
-          pincode: '',
-          town: '',
-          bookedStatus: 'Available',
-          bookedWith: ''
-        });
-        navigator.geolocation.getCurrentPosition((position) => {
-          console.log(position);
-          const { latitude, longitude } = position.coords;
-          setMarkerPosition({ lat: latitude, lng: longitude });
-          setCabDetails((prevDetails) => ({
-            ...prevDetails,
-            latitude: latitude.toString(),
-            longitude: longitude.toString(),
-          }));
-        });
-      } else {
-        alert('Error adding cab details.');
-      }
-    } catch (error) {
-      console.error('Error adding cab:', error);
+      const area = await reverseGeocode(markerPosition.lat, markerPosition.lng);
+      await axios.post(
+        `${API_URL}/api/cabs/addCab`,
+        { ...cabDetails, pincode: area?.pincode || 'N/A', town: area?.town || 'N/A' },
+        { headers: authHeaders() }
+      );
+      setSuccess(`${cabDetails.name} was added${area?.town ? ` in ${area.town}` : ''}.`);
+      setCabDetails((prev) => ({ ...emptyCab, latitude: prev.latitude, longitude: prev.longitude }));
+    } catch (err) {
+      setError(errorMessage(err, 'Error adding cab details.'));
+    } finally {
+      setSaving(false);
     }
   };
-
-  if (loadError) {
-    return <div>Error loading maps</div>;
-  }
-
-  if (!isLoaded) {
-    return <div>Loading...</div>;
-  }
 
   return (
     <>
       <AdminNavbar />
-      <div className="dashboard-wrapper">
-        <div className="dashboard-container">
-          <h2>Add Cab Details</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="input-container">
-              <label>Name</label>
-              <input type="text" name="name" value={cabDetails.name} onChange={handleInputChange} required />
+      <main className="page admin-page">
+        <div className="page-header">
+          <h1>Add a cab</h1>
+          <p>Enter the captain's details and drop a pin where the cab is parked.</p>
+        </div>
+
+        <div className="admin-grid">
+          <form className="surface admin-form" onSubmit={handleSubmit}>
+            {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+            {success && <div className="alert-box alert-box--success" role="status">{success}</div>}
+
+            <div className="field">
+              <label htmlFor="cab-name">Captain name</label>
+              <input id="cab-name" className="input" type="text" name="name" value={cabDetails.name} onChange={handleInputChange} required />
             </div>
-            <div className="input-container">
-              <label>Phone</label>
-              <input type="tel" name="phone" value={cabDetails.phone} onChange={handleInputChange} required />
+            <div className="field">
+              <label htmlFor="cab-phone">Phone</label>
+              <input id="cab-phone" className="input" type="tel" name="phone" autoComplete="off" value={cabDetails.phone} onChange={handleInputChange} required />
             </div>
-            <div className="input-container">
-              <label>Email</label>
-              <input type="email" name="email" value={cabDetails.email} onChange={handleInputChange} required />
+            <div className="field">
+              <label htmlFor="cab-email">Email</label>
+              <input id="cab-email" className="input" type="email" name="email" autoComplete="off" value={cabDetails.email} onChange={handleInputChange} required />
             </div>
-            <div className="input-container">
-              <label>Latitude</label>
-              <input type="text" name="latitude" value={cabDetails.latitude} onChange={handleInputChange} />
+            <div className="admin-form__row">
+              <div className="field">
+                <label htmlFor="cab-lat">Latitude</label>
+                <input id="cab-lat" className="input" type="number" step="any" min="-90" max="90" name="latitude" value={cabDetails.latitude} onChange={handleInputChange} required />
+              </div>
+              <div className="field">
+                <label htmlFor="cab-lng">Longitude</label>
+                <input id="cab-lng" className="input" type="number" step="any" min="-180" max="180" name="longitude" value={cabDetails.longitude} onChange={handleInputChange} required />
+              </div>
             </div>
-            <div className="input-container">
-              <label>Longitude</label>
-              <input type="text" name="longitude" value={cabDetails.longitude} onChange={handleInputChange} />
-            </div>
-            <button type="submit" className="submit-button">Add Cab</button>
+            <button type="button" className="btn btn-ghost btn-sm admin-form__locate" onClick={locateMe}>
+              <FaCrosshairs aria-hidden="true" /> Use my location
+            </button>
+            <p className="field-hint">Town and pincode are filled in automatically from the location.</p>
+
+            <button type="submit" className="btn btn-accent btn-block" disabled={saving}>
+              {saving ? 'Adding cab…' : 'Add cab'}
+            </button>
           </form>
+
+          <div className="surface admin-map">
+            {isLoaded ? (
+              <GoogleMap
+                mapContainerClassName="admin-map__canvas"
+                zoom={13}
+                center={center}
+                onClick={(event) => setPosition(event.latLng.toJSON())}
+                options={{ mapTypeControl: false, streetViewControl: false, fullscreenControl: false }}
+              >
+                {markerPosition && <Marker position={markerPosition} />}
+              </GoogleMap>
+            ) : (
+              <MapStatus missingKey={missingKey} loadError={loadError} />
+            )}
+          </div>
         </div>
-        <div className="map-container">
-          <GoogleMap
-            mapContainerStyle={{ width: '100%', height: '100%' }}
-            zoom={13}
-            center={markerPosition}
-            onClick={handleMapClick}
-            onLoad={(map) => setMap(map)}
-          >
-            {markerPosition && <Marker position={markerPosition} />}
-          </GoogleMap>
-        </div>
-      </div>
+      </main>
     </>
   );
 };

@@ -1,101 +1,72 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import "./Login.css"; // Optional: Add your CSS styles here
-import { FaEye, FaEyeSlash } from "react-icons/fa"; // Import eye icons
+import React, { useState } from 'react';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { API_URL } from '../config';
+import { errorMessage, getSession, saveSession } from '../utils/auth';
+import AuthLayout from './AuthLayout';
+import PasswordInput from './PasswordInput';
 
 const Login = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false); // State to toggle password visibility
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const session = getSession();
+  if (session) return <Navigate to={session.isAdmin ? '/admin-dashboard' : '/'} replace />;
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError("");
+    setError('');
+    setLoading(true);
     try {
-      const response = await axios.post(
-        "https://smart-cab-allocation-backend.onrender.com/api/auth/login",
-        {
-          email,
-          password,
-        }
-      );
-      const { token, isAdmin } = response.data;
-
-      console.log("Token:", token);
-      console.log("isAdmin:", isAdmin);
-
-      // Save token to localStorage (using the same key as in middleware)
-      localStorage.setItem("auth-token", token);
-      localStorage.setItem("isAdmin", isAdmin);
-
-      // Redirect based on user role
-      if (isAdmin) {
-        console.log("Navigating to admin dashboard");
-        navigate("/admin-dashboard"); // Redirect to Admin Dashboard if user is admin
-      } else {
-        console.log("Navigating to home page");
-        navigate("/"); // Redirect to Home for normal users
-      }
-    } catch (error) {
-      if (error.response && error.response.status === 400) {
-        setError("Incorrect Credentials.");
-      } else {
-        setError("Something went wrong. Please try again later.");
-      }
+      const { data } = await axios.post(`${API_URL}/api/auth/login`, { email, password });
+      saveSession(data.token, data.isAdmin);
+      navigate(data.isAdmin ? '/admin-dashboard' : '/');
+    } catch (err) {
+      setError(err.response?.status === 400 ? 'Incorrect email or password.' : errorMessage(err));
+      setLoading(false);
     }
   };
 
   return (
-    <div className="login-wrapper">
-      <div className="login-container">
-        <h2>Log In</h2>
-        <form onSubmit={handleLogin}>
-          <div className="password-input-container">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="password-input-container">
-            <input
-              type={showPassword ? "text" : "password"} // Toggle between password and text
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            <span
-              className="toggle-password"
-              onClick={() => setShowPassword(!showPassword)} // Toggle visibility
-            >
-              {showPassword ? <FaEyeSlash /> : <FaEye />}{" "}
-              {/* Show either eye or eye-slash icon */}
-            </span>
-          </div>
-          <button type="submit">Log In</button>
-        </form>
-        {error && (
-          <p className="error-message" style={{ color: "red" }}>
-            {error}
-          </p>
-        )}
-        <p>
-          Don't have an account?{" "}
-          <span
-            onClick={() => navigate("/signup")}
-            style={{ cursor: "pointer", color: "blue" }}
-          >
-            Sign Up
-          </span>
-        </p>
-      </div>
-    </div>
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Log in to book a cab near you."
+      footer={<>Don't have an account? <Link to="/signup">Sign up</Link></>}
+    >
+      {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+      <form onSubmit={handleLogin}>
+        <div className="field">
+          <label htmlFor="login-email">Email</label>
+          <input
+            id="login-email"
+            className="input"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="login-password">Password</label>
+          <PasswordInput
+            id="login-password"
+            autoComplete="current-password"
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <button type="submit" className="btn btn-accent btn-block" disabled={loading}>
+          {loading ? 'Logging in…' : 'Log in'}
+        </button>
+      </form>
+    </AuthLayout>
   );
 };
 

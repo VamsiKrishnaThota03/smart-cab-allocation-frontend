@@ -1,30 +1,20 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
-import {jwtDecode} from 'jwt-decode'; // Correct import
+import { Navigate, useLocation } from 'react-router-dom';
+import { clearSession, getSession } from '../utils/auth';
 
+// Requires a valid, unexpired token. Admin-only routes also need the isAdmin claim.
 const PrivateRoute = ({ children, adminOnly = false }) => {
-  const token = localStorage.getItem('auth-token'); // Get token from localStorage
+  const location = useLocation();
+  const session = getSession();
 
-  if (!token) {
-    // If no token, redirect to login
-    return <Navigate to="/login" />;
+  if (!session) {
+    clearSession();
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  try {
-    const decodedToken = jwtDecode(token);
-    const isAdmin = decodedToken?.isAdmin; // Assuming the token contains 'isAdmin' flag
+  if (adminOnly && !session.isAdmin) return <Navigate to="/" replace />;
 
-    if (adminOnly && !isAdmin) {
-      // If the route is admin-only and user is not an admin, redirect to Home
-      return <Navigate to="/" />;
-    }
-    
-    return children; // Render the component if checks pass
-  } catch (error) {
-    // In case of token parsing errors, log the user out (optional)
-    localStorage.removeItem('auth-token');
-    return <Navigate to="/login" />;
-  }
+  return children;
 };
 
 export default PrivateRoute;

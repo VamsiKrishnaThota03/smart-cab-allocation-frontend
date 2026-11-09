@@ -1,94 +1,90 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { FaEye, FaEyeSlash } from 'react-icons/fa'; // Import eye icons
-import './SignUp.css'; // Import custom styles
+import { API_URL } from '../config';
+import { errorMessage, getSession, saveSession } from '../utils/auth';
+import AuthLayout from './AuthLayout';
+import PasswordInput from './PasswordInput';
 
 const Signup = () => {
   const [credentials, setCredentials] = useState({ name: '', email: '', password: '' });
-  const [showPassword, setShowPassword] = useState(false); // State to toggle password visibility
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  if (getSession()) return <Navigate to="/" replace />;
+
+  const onChange = (e) => setCredentials({ ...credentials, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(''); // Clear any existing error message
+    setError('');
+    setLoading(true);
     try {
-      const response = await axios.post('https://smart-cab-allocation-backend.onrender.com/api/auth/register', {
-        name: credentials.name,
-        email: credentials.email,
-        password: credentials.password,
-      });
-  
-      const { token } = response.data;
-      localStorage.setItem('auth-token', token);
-      navigate('/'); // Redirect to the home page after successful sign-up
-    } catch (error) {
-      if (error.response) {
-        const errorMessage = error.response.data.message || 'Something went wrong. Please try again later.';
-        setError(errorMessage); // Set the error message from the server
-      } else {
-        setError('Unable to connect to the server. Please try again later.');
-      }
+      const { data } = await axios.post(`${API_URL}/api/auth/register`, credentials);
+      saveSession(data.token, data.isAdmin);
+      navigate(data.isAdmin ? '/admin-dashboard' : '/');
+    } catch (err) {
+      setError(errorMessage(err));
+      setLoading(false);
     }
-  };
-  
-  
-
-  const onChange = (e) => {
-    setCredentials({ ...credentials, [e.target.name]: e.target.value });
   };
 
   return (
-    <div className="signup-wrapper">
-      <div className="signup-container">
-        <h2>Sign Up</h2>
-        <form onSubmit={handleSubmit}>
+    <AuthLayout
+      title="Create your account"
+      subtitle="It takes less than a minute."
+      footer={<>Already have an account? <Link to="/login">Log in</Link></>}
+    >
+      {error && <div className="alert-box alert-box--error" role="alert">{error}</div>}
+      <form onSubmit={handleSubmit}>
+        <div className="field">
+          <label htmlFor="signup-name">Name</label>
           <input
+            id="signup-name"
+            className="input"
             type="text"
-            placeholder="Name"
             name="name"
+            autoComplete="name"
+            placeholder="Your full name"
+            minLength={3}
             value={credentials.name}
             onChange={onChange}
             required
-            style={{ width: '92%' }}
           />
+        </div>
+        <div className="field">
+          <label htmlFor="signup-email">Email</label>
           <input
+            id="signup-email"
+            className="input"
             type="email"
-            placeholder="Email"
             name="email"
+            autoComplete="email"
+            placeholder="you@example.com"
             value={credentials.email}
             onChange={onChange}
             required
-            style={{ width: '92%' }}
           />
-          <div className="password-input-container">
-            <input
-              type={showPassword ? 'text' : 'password'} // Toggle between password and text
-              placeholder="Password"
-              name="password"
-              value={credentials.password}
-              onChange={onChange}
-              required
-            />
-            <span
-              className="toggle-password"
-              onClick={() => setShowPassword(!showPassword)} // Toggle visibility
-            >
-              {showPassword ? <FaEyeSlash /> : <FaEye />} {/* Show eye or eye-slash icon */}
-            </span>
-          </div>
-          <button type="submit">Sign Up</button>
-        </form>
-        {error && <p className="error-message">{error}</p>}
-        <p>
-          Already have an account?{' '}
-          <span onClick={() => navigate('/login')} style={{ cursor: 'pointer', color: 'blue' }}>
-            Log In
-          </span>
-        </p>
-      </div>
-    </div>
+        </div>
+        <div className="field">
+          <label htmlFor="signup-password">Password</label>
+          <PasswordInput
+            id="signup-password"
+            name="password"
+            autoComplete="new-password"
+            placeholder="At least 5 characters"
+            minLength={5}
+            value={credentials.password}
+            onChange={onChange}
+            required
+          />
+        </div>
+        <button type="submit" className="btn btn-accent btn-block" disabled={loading}>
+          {loading ? 'Creating account…' : 'Sign up'}
+        </button>
+      </form>
+    </AuthLayout>
   );
 };
 
