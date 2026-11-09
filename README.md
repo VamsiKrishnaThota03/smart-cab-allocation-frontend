@@ -1,3 +1,5 @@
+> **📦 Archived:** this repo is kept for history. Active development continues in the combined repository **[smart-cab-allocation](https://github.com/VamsiKrishnaThota03/smart-cab-allocation)**, which contains the same frontend and backend code.
+
 # Smart Cab Allocation - Frontend
 
 A React web app for finding, booking and tracking nearby cabs on Google Maps. It also includes an admin dashboard for managing cabs and users.
